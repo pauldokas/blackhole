@@ -13,4 +13,35 @@ The output can be formatted for:
 
 ---
 
+# Unbound
+First generate a blackhole zone file like this:
+
+```
+blackhole -f unbound -o /path/to/blackhole.zone
+```
+
+then import the newly created blackhole zone file by including it in your
+`unbound.conf` file by adding something like this:
+
+```
+# blackhole domains
+include: "/usr/local/etc/unbound/blackhole.zone"
+```
+
+---
+
+# BIND
+
+_Not implemented yet_
+
+---
+
+# Text
+
+Simply run the following commmand:
+
+```
+blackhole
+```
+
 [src]: https://github.com/pauldokas/blackhole
