@@ -11,19 +11,8 @@ from itertools import chain, combinations
 import blackhole
 
 
-CATEGORIES = [
-    blackhole.Category.SUSPICIOUS,
-    blackhole.Category.ADVERTISING,
-    blackhole.Category.TRACKING,
-    blackhole.Category.MALICIOUS,
-    blackhole.Category.OTHER,
-]
-
-QUALITIES = [
-    blackhole.Quality.CROSS,
-    blackhole.Quality.STD,
-    blackhole.Quality.TICK,
-]
+CATEGORIES = list(blackhole.Category)
+QUALITIES = list(sorted(blackhole.Quality))
 
 
 @pytest.fixture
@@ -90,5 +79,18 @@ def test_get_blocklist(master_list):
 
             assert m
             assert fqdn == m.group('fqdn')
+
+
+def test_adjustments():
+    fqdns = set(['abc.com', 'def.ab.com', 'def.com', 'dee.net', 'Deg.org'])
+    includes = ['ghi.com', 'xyz.com']
+    excludes = ['def.com', 'lmn.net', r'/de.\.(com|net|org)/', r'/de.\.(com|net|org)/i']            # noqa: E501
+
+    incl_adjs = blackhole.create_adjustments(includes, allow_regexes=False)
+    excl_adjs = blackhole.create_adjustments(excludes, allow_regexes=True)
+
+    nfqdns = blackhole.make_adjustments(fqdns, incl_adjs, excl_adjs)
+
+    assert len(nfqdns) == 4
 
 # vim:sw=4:ts=4:et:fenc=utf-8:

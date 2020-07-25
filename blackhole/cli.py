@@ -25,7 +25,10 @@ def main():
     argparser.add_argument('-u', '--url', default=blackhole.MASTER_CSV_URL)
 
     argparser.add_argument('-c', '--category', nargs='*', default=[])
-    argparser.add_argument('-q', '--quality', choices=['tick', 'std', 'cross'], default='std')      # noqa: E501
+    argparser.add_argument('-q', '--quality', choices=['tick', 'std', 'cross'], default='tick')     # noqa: E501
+
+    argparser.add_argument('-i', '--includes', nargs='*', default=[])
+    argparser.add_argument('-e', '--excludes', nargs='*', default=[])
 
     argparser.add_argument('-f', '--format', choices=['unbound', 'bind', 'text'], default='text')   # noqa: E501
     argparser.add_argument('-o', '--output', type=argparse.FileType('w'), default=sys.stdout)       # noqa: E501
@@ -69,6 +72,10 @@ def main():
         log.error('Unknown quality:  {}'.format(args.quality))
         exit(-1)
 
+    # preprocess includes and excludes
+    includes = blackhole.create_adjustments(args.includes, allow_regexes=False)
+    excludes = blackhole.create_adjustments(args.excludes, allow_regexes=True)
+
     # Download the Master List
     if not args.silent:
         print(f'Downloading master list from {args.url}')
@@ -80,7 +87,7 @@ def main():
         exit(-1)
 
     # Filter down to the specified types of FQDN lists
-    filtered_list = blackhole.filter(master_list, categories=categories, quality=quality)
+    filtered_list = blackhole.filter(master_list, categories=categories, quality=quality)   # noqa: E501
 
     #
     fqdns = set()
@@ -101,8 +108,15 @@ def main():
             log.error(f'Could not retrieve file "{url}":  {msg}')
             exit(-1)
 
+    # process includes and excludes
+    fqdns = blackhole.make_adjustments(fqdns, includes, excludes)
+
     # sort and print the FQDNs in the specified format
-    for fqdn in sorted(fqdns):
+    rfqdns = [fqdn.split('.')[::-1] for fqdn in fqdns]
+
+    for rfqdn in sorted(rfqdns):
+        fqdn = '.'.join(rfqdn[::-1])
+
         if args.format == 'unbound':
             args.output.write(f'local-zone: "{fqdn}" static\n')
 

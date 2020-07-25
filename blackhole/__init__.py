@@ -19,16 +19,6 @@ FIELDNAMES = ['category', 'quality', 'site', 'description', 'url']
 
 
 #
-FQDN_PATTERN = r'(?P<fqdn>[a-z0-9_-]+(\.[a-z0-9_-]+)+\.?(\s*#.*)?)'
-IPV4_PATTERN = r'[0-9]{1,3}(\.[0-9]{1,3}){3}'
-IPV6_PATTERN = r'[0-9a-f\:]+'
-IP_PATTERN = r'((' + IPV4_PATTERN + r')|(' + IPV6_PATTERN + r'))'
-
-FQDN_RE = re.compile(FQDN_PATTERN, re.I)
-IP_FQDN_RE = re.compile(r'\s+'.join([IP_PATTERN, FQDN_PATTERN]), re.I)
-
-
-#
 class Category(enum.Enum):
     SUSPICIOUS = enum.auto()
     ADVERTISING = enum.auto()
@@ -61,7 +51,7 @@ class FileRetrieveError(IOError):
 
 #
 def get_masterlist(url=MASTER_CSV_URL):
-    LOG.debug('Retrieving master list from {url}')
+    LOG.debug(f'Retrieving master list from {url}')
 
     with requests.Session() as s:
         try:
@@ -74,7 +64,7 @@ def get_masterlist(url=MASTER_CSV_URL):
             for row in reader:
                 # make sure a category is present
                 if 'category' not in row:
-                    LOG.warn('no category found in {row}')
+                    LOG.warn(f'no category found in {row}')
                     continue
 
                 # convert the row's category to the enum type
@@ -94,7 +84,7 @@ def get_masterlist(url=MASTER_CSV_URL):
 
                 # make sure a quality is present
                 if 'quality' not in row:
-                    LOG.warn('no quality found in {row}')
+                    LOG.warn(f'no quality found in {row}')
                     continue
 
                 # convert the row's quality to the enum type
@@ -110,12 +100,12 @@ def get_masterlist(url=MASTER_CSV_URL):
 
                 # make sure a description is present
                 if 'description' not in row:
-                    LOG.warn('no description found in {row}')
+                    LOG.warn(f'no description found in {row}')
                     continue
 
                 # make sure a url is present
                 if 'url' not in row:
-                    LOG.warn('no description found in {row}')
+                    LOG.warn(f'no description found in {row}')
                     continue
 
                 #
@@ -155,8 +145,18 @@ def filter(master_list, categories=ALL_CATEGORIES, quality=Quality.STD):
 
 #
 def get_blocklist(url):
-    LOG.debug('Retrieving blocklist from {url}')
+    LOG.debug(f'Retrieving blocklist from {url}')
 
+    #
+    fqdn_pattern = r'(?P<fqdn>[a-z0-9_-]+(\.[a-z0-9_-]+)+\.?(\s*#.*)?)'
+    ipv4_pattern = r'[0-9]{1,3}(\.[0-9]{1,3}){3}'
+    ipv6_pattern = r'[0-9a-f\:]+'
+    ip_pattern = r'((' + ipv4_pattern + r')|(' + ipv6_pattern + r'))'
+
+    fqdn_re = re.compile(fqdn_pattern, re.I)
+    ip_fqdn_re = re.compile(r'\s+'.join([ip_pattern, fqdn_pattern]), re.I)
+
+    #
     with requests.Session() as s:
         try:
             handle = s.get(url)
@@ -180,13 +180,13 @@ def get_blocklist(url):
                     continue
 
                 # match against FQDN pattern
-                m = FQDN_RE.fullmatch(line)
+                m = fqdn_re.fullmatch(line)
                 if m:
                     blocklist.append(m.group('fqdn'))
                     continue
 
                 # match against IP + FQDN pattern
-                m = IP_FQDN_RE.fullmatch(line)
+                m = ip_fqdn_re.fullmatch(line)
                 if m:
                     blocklist.append(m.group('fqdn'))
                     continue
@@ -199,5 +199,108 @@ def get_blocklist(url):
 
         #
         return blocklist
+
+
+#
+def create_adjustments(adjustments, allow_regexes=True):
+    assert isinstance(adjustments, (tuple, list))
+    for adj in adjustments:
+        assert isinstance(adj, str)
+
+    #
+    fqdn_pattern = r'(?P<fqdn>[a-z0-9_-]+(\.[a-z0-9_-]+)+\.?(\s*#.*)?)'
+    fqdn_re = re.compile(fqdn_pattern, re.I)
+
+    #
+    fqdns = set()
+    regexes = []
+
+    for adj in adjustments:
+        if adj[0] == '@':
+            with open(adj[1:], 'r') as f:
+                more_adjs = f.readlines()
+
+            (nfqdns, nregexes) = create_adjustments(more_adjs)
+
+            fqdns = fqdns.union(nfqdns)
+            regexes.extend(nregexes)
+
+        elif allow_regexes and adj.find('/') != -1:
+            parts = adj.split('/')
+
+            if len(parts) != 3:
+                LOG.warning(f'skipping malformed regex adjustment:  {adj}')
+                continue
+
+            (_, pattern, modifiers) = parts
+
+            flags = 0
+            if len(modifiers) > 0:
+                if 'a' in modifiers:
+                    flags |= re.A
+                elif 'i' in modifiers:
+                    flags |= re.I
+                elif 'l' in modifiers:
+                    flags |= re.L
+                else:
+                    LOG.warning(f'unknown regex modifier in regex adjustment:  {adj}')       # noqa: E501
+                    continue
+
+            adj_re = re.compile(pattern, flags)
+
+            regexes.append((adj, adj_re))
+
+        else:
+            m = fqdn_re.fullmatch(adj)
+            if not m:
+                LOG.warning(f'skipping malformed FQDN adjustment:  {adj}')       # noqa: E501
+                continue
+
+            fqdns.add(adj)
+
+    return (fqdns, regexes)
+
+
+#
+def make_adjustments(fqdns, includes=None, excludes=None):
+    assert isinstance(includes, (tuple, list))
+    assert len(includes) == 2
+    assert len(includes[1]) == 0
+
+    assert isinstance(excludes, (tuple, list))
+    assert len(excludes) == 2
+
+    nfqdns = set()
+
+    # process excludes
+    (efqdns, eregexes) = excludes
+    for fqdn in fqdns:
+        skip = False
+
+        # check static FQDNs first
+        for efqdn in efqdns:
+            if fqdn == efqdn:
+                skip = True
+                break
+
+        # check regex FQDNs next
+        for eregex in eregexes:
+            (pattern, compiled_re) = eregex
+
+            m = compiled_re.fullmatch(fqdn)
+            if m:
+                skip = True
+                break
+
+        if not skip:
+            nfqdns.add(fqdn)
+
+    # process includes
+    (ifqdns, _) = includes
+    for ifqdn in ifqdns:
+        nfqdns.add(ifqdn)
+
+    #
+    return nfqdns
 
 # vim:sw=4:ts=4:et:fenc=utf-8:
