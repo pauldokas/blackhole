@@ -148,7 +148,7 @@ def get_blocklist(url):
     LOG.debug(f'Retrieving blocklist from {url}')
 
     #
-    fqdn_pattern = r'(?P<fqdn>[a-z0-9_-]+(\.[a-z0-9_-]+)+\.?(\s*#.*)?)'
+    fqdn_pattern = r'(?P<fqdn>[a-z0-9_-]+(\.[a-z0-9_-]+)*(\.[a-z][a-z0-9_-]*[a-z])\.?)' # noqa: E501
     ipv4_pattern = r'[0-9]{1,3}(\.[0-9]{1,3}){3}'
     ipv6_pattern = r'[0-9a-f\:]+'
     ip_pattern = r'((' + ipv4_pattern + r')|(' + ipv6_pattern + r'))'
@@ -168,6 +168,9 @@ def get_blocklist(url):
             # process all lines one at a time
             blocklist = []
             for line in content.splitlines():
+                # strip off any comments
+                line = line.split('#')[0]
+
                 # strip leading and following whitespace
                 line = line.lstrip().rstrip()
 
@@ -176,8 +179,11 @@ def get_blocklist(url):
                     continue
 
                 # ignore comments
-                if line[0] == '#':
-                    continue
+                # if line[0] == '#':
+                #     continue
+
+                # slamcase to lower
+                line = line.lower()
 
                 # match against FQDN pattern
                 m = fqdn_re.fullmatch(line)
@@ -208,7 +214,7 @@ def create_adjustments(adjustments, allow_regexes=True):
         assert isinstance(adj, str)
 
     #
-    fqdn_pattern = r'(?P<fqdn>[a-z0-9_-]+(\.[a-z0-9_-]+)+\.?(\s*#.*)?)'
+    fqdn_pattern = r'(?P<fqdn>[a-z0-9_-]+(\.[a-z0-9_-]+)*(\.[a-z][a-z0-9_-]*[a-z])\.?)' # noqa: E501
     fqdn_re = re.compile(fqdn_pattern, re.I)
 
     #
