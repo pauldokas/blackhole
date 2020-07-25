@@ -80,7 +80,7 @@ def main():
         exit(-1)
 
     # Filter down to the specified types of FQDN lists
-    filtered_list = filter(master_list, categories=categories, quality=quality)
+    filtered_list = blackhole.filter(master_list, categories=categories, quality=quality)
 
     #
     fqdns = set()
